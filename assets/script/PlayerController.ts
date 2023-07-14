@@ -32,6 +32,9 @@ export class PlayerController extends Component {
     /** 目标位置 */
     private _targetPos: Vec3 = new Vec3();
 
+    /** 记录当前步数 */
+    private _curMoveIndex: number = 0
+
     @property(Animation)
     BodyAnim: Animation = null
 
@@ -52,6 +55,8 @@ export class PlayerController extends Component {
                 this.node.setPosition(this._targetPos)
                 //重置跳跃状态
                 this._startJump = false
+                //跳跃结束，发送最终步数
+                this.onJumoEnd()
             } else {
                 //未完成跳跃
                 //获取当前位置
@@ -74,6 +79,9 @@ export class PlayerController extends Component {
         if (event.keyCode == 67) {
             //c 键
             this.jumpByStep(1)
+        } else if (event.keyCode == 68) {
+            //d 键
+            this.jumpByStep(2)
         }
     }
 
@@ -98,6 +106,8 @@ export class PlayerController extends Component {
         if (this.BodyAnim) {
             this.BodyAnim.play("oneStep")
         }
+
+        this._curMoveIndex += num
     }
 
     /**
@@ -109,6 +119,26 @@ export class PlayerController extends Component {
         } else {
             input.off(Input.EventType.KEY_DOWN, this.onJumpUp, this)
         }
+    }
+
+    /** 重置步数 */
+    resetCurMoveIndex() {
+        this._curMoveIndex = 0
+    }
+
+    /**
+     * 跳跃结束
+     */
+    onJumoEnd() {
+        //跳跃结束，发送最终步数
+        this.node.emit("jumpEnd", this._curMoveIndex)
+    }
+
+    /**
+     * 获取移动步数
+     */
+    getCurMoveIndex() {
+        return this._curMoveIndex
     }
 }
 

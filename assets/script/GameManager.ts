@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Prefab, instantiate, Label, Vec3 } from 'cc';
+import { _decorator, Component, Node, Prefab, instantiate, Label, Vec3, ProgressBar, find } from 'cc';
 import { BLOCK_SIZE, PlayerController } from './PlayerController';
 const { ccclass, property, executeInEditMode } = _decorator;
 
@@ -16,7 +16,7 @@ enum GameState{
 }
 
 @ccclass('GameManager')
-// @executeInEditMode(true)
+@executeInEditMode(true)
 export class GameManager extends Component {
 
     /** 开始菜单 */
@@ -35,6 +35,20 @@ export class GameManager extends Component {
     @property(Prefab)
     public floorPerfab: Prefab|null = null
 
+    /** 结束后展示的label */
+    @property(Label)
+    public endLabel: Label|null = null
+
+    /** 进度条 Node */
+    public progressBarNode: Node|null = null
+
+    /** 进度条 ProgressBar */
+    // @property(ProgressBar)
+    public progressBar: ProgressBar|null = null
+
+    /** progressBar Label */
+    public progressBarLabel: Label|null = null
+
     /** 路面数组 */
     private _road: BlockType[] = []
 
@@ -44,6 +58,8 @@ export class GameManager extends Component {
     start() {
         //初始化
         this.setCurState(GameState.GS_INIT)
+        //这里我们使用的 this.playerCtl?.node 也就是 PlayerController 的节点来接收事件，在 Cocos Creator 中，某个节点派发的事件，只能用这个节点的引用去监听
+        this.playerCtl?.node.on('jumpEnd', this.onPlayerJumpEnd, this)
     }
 
     update(deltaTime: number) {
@@ -54,6 +70,19 @@ export class GameManager extends Component {
      * 状态为init时的处理
      */
     init() {
+        //隐藏结束弹窗
+        let endCanvas = find('EndCanvas')
+        if (endCanvas) {
+            endCanvas.active = false;
+        }
+        //获取进度条
+        this.progressBarNode = find("UICanvas/ProgressBar")
+        this.progressBar = find("UICanvas/ProgressBar").getComponent(ProgressBar)
+        //loading
+        if (this.progressBarNode) {
+            this.progressBarNode.active = false
+        }
+
         //显示菜单
         if (this.startMenu) {
             this.startMenu.active = true
@@ -68,8 +97,8 @@ export class GameManager extends Component {
             this.playerCtl.setInputActive(false)
             //初始化角色位置
             this.playerCtl.node.setPosition(Vec3.ZERO)
-            //
-            // this.playerCtl.reset()
+            //重置步数
+            this.playerCtl.resetCurMoveIndex()
         }
     }
 
@@ -77,22 +106,27 @@ export class GameManager extends Component {
      * 进行中
      */
     playint() {
-        //隐藏菜单
-        if (this.startMenu) {
-            this.startMenu.active = false
-        }
+        //加载
+        this.loading()        
+    }
 
-        //重置计数器
-        if (this.stepsLabel) {
-            this.stepsLabel.string = '0'
-        }
+    /**
+     * 结束
+     */
+    end() {
+        //显示结束弹窗
+        // let endCanvas = find('EndCanvas')
+        // if (endCanvas) {
+        //     endCanvas.active = true;
+        // }
 
-        //激活角色控制,直接设置active会直接开始监听事件，做了一下延迟处理
-        setTimeout(() => {
-            if (this.playerCtl) {
-                this.playerCtl.setInputActive(true)
-            }
-        }, 0.1)
+        //返回成绩
+        // if (this.endLabel) {
+        //     this.endLabel.string  = "结束了; 步数：" + this.playerCtl.getCurMoveIndex;
+        // }
+        // debugger
+        //初始化
+        this.init()
     }
 
     /**
@@ -109,6 +143,7 @@ export class GameManager extends Component {
                 this.playint()
                 break;
             case GameState.GS_END:
+                this.end();
                 break;         
         }
     }
@@ -132,8 +167,14 @@ export class GameManager extends Component {
                 //第一块路面
                 this._road.push(BlockType.BT_STONE)
             } else {
-                //随机填充0和1
-                this._road.push(Math.floor(Math.random() * 2))
+                //随机填充0和1，但是不能出现连续2个空路面
+                if (this._road[i - 1] == BlockType.BT_NONE) {
+                    //当前一个是空路面时下一个必须是路面
+                    this._road.push(BlockType.BT_STONE)
+                } else {
+                    //随机填充
+                    this._road.push(Math.floor(Math.random() * 2))
+                }
             }
         }
 
@@ -172,5 +213,73 @@ export class GameManager extends Component {
         //设置进行中
         this.setCurState(GameState.GS_PLAYINT)
     }
-}
 
+    /**
+     * 监听Player跳跃结束的事件方法
+     */
+    onPlayerJumpEnd(moveIndex: number) {
+        if (this.stepsLabel) {
+            this.stepsLabel.string = '' + (moveIndex >= this.roadLenght ? this.roadLenght : moveIndex);
+        }
+        this.checkResult(moveIndex)
+    }
+
+    /**
+     * 检查是否落到空路面
+     */
+    checkResult(moveIndex: number) {
+        console.log(this._road[moveIndex], moveIndex, this.roadLenght, this._road)
+        if (moveIndex < this.roadLenght) {
+            if (this._road[moveIndex] == BlockType.BT_NONE) {
+                //跳到了无路面的位置
+                this.setCurState(GameState.GS_END)
+            }
+        } else {
+            //超出最大长度
+            this.setCurState(GameState.GS_END)
+        }
+    }
+
+    /**
+     * 加载进度
+     */
+    loading() {
+        if (this.progressBar) {
+            //显示进度条
+            this.progressBarNode.active = true
+            this.progressBarLabel= find("UICanvas/ProgressBar/Label").getComponent(Label)
+            //初始化进度
+            this.progressBar.progress = 0
+            this.schedule(function () {
+                //进度条速度控制
+                let speed = 0.2;
+                this.progressBar.progress = (this.progressBar.progress + speed >= 1) ? 1 : this.progressBar.progress + speed;
+                this.progressBarLabel.string = '加载...' + Math.floor(this.progressBar.progress * 100)
+                if (this.progressBar.progress >= 1) {
+                    //加载完毕
+                    this.progressBar.progress = 1
+                    this.unschedule(this)
+                    //隐藏进度条
+                    this.progressBarNode.active = false
+                    //隐藏菜单
+                    if (this.startMenu) {
+                        this.startMenu.active = false
+                    }
+        
+                    //重置计数器
+                    if (this.stepsLabel) {
+                        this.stepsLabel.string = '0'
+                    }
+        
+                    //激活角色控制,直接设置active会直接开始监听事件，做了一下延迟处理
+                    setTimeout(() => {
+                        if (this.playerCtl) {
+                            this.playerCtl.setInputActive(true)
+                        }
+                    }, 0.1)
+                }
+                
+            }, 0.1, 5, 0);
+        }
+    }
+}
